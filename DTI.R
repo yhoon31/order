@@ -84,6 +84,10 @@ pair_2 <- test_pairs[,2]
 pair_factor <- choose(m-2,2)/(n_1+1)
 pairs_by_index <- lapply(1:m,function(a) which(pair_1==a | pair_2==a))
 
+pair_index <- matrix(NA_integer_,m,m)
+pair_index[cbind(pair_1,pair_2)] <- seq_along(pair_1)
+pair_index[cbind(pair_2,pair_1)] <- seq_along(pair_1)
+
 pb <- txtProgressBar(min=0,max=num_test_set,style=3)
 
 for(k in 1:num_test_set)
@@ -98,6 +102,16 @@ for(k in 1:num_test_set)
   n_cal_null <- length(cal_null_sorted)
   
   muhat_test <- abs(muhat_test_all[(m*(k-1)+1):(m*k)])
+  muhat_rank <- rank(muhat_test + runif(m, -1e-10, 1e-10))
+  
+  idx_list <- vector("list",n_pairs)
+  for(r in seq_len(n_pairs))
+  {
+    lower <- which(muhat_rank <= min(muhat_rank[pair_1[r]],muhat_rank[pair_2[r]]))
+    upper <- which(muhat_rank >= max(muhat_rank[pair_1[r]],muhat_rank[pair_2[r]]))
+    idx_list[[r]] <- as.vector(pair_index[lower,upper,drop=FALSE])
+  }
+  
   Y_test <- y_test_all[(m*(k-1)+1):(m*k)]
   
   test_diff <- muhat_test[pair_1]-muhat_test[pair_2]
@@ -164,12 +178,13 @@ for(k in 1:num_test_set)
     e_denom[finite_T] <- n_cal_null-findInterval(T_rej[finite_T],cal_null_sorted)+1
     e_val <- as.numeric(test_abs_diff>T_rej)*(n_1+1)/e_denom
     
-    rej_pairs <- e_val>=eBH(e_val,alpha)
+    e_val_tilde <- sapply(idx_list,function(idx) min(e_val[idx]))
     
     U <- runif(1)
-    e_val_U <- e_val/U
-    rej_pairs_U <- e_val_U>=eBH(e_val_U,alpha)
+    e_val_tilde_U <- e_val_tilde/U
     
+    rej_pairs <- e_val_tilde>=eBH(e_val_tilde,alpha)
+    rej_pairs_U <- e_val_tilde_U>=eBH(e_val_tilde_U,alpha)
     rej_pairs_p <- p_val<=pBH(p_val,alpha)
     
     R <- sum(rej_pairs)

@@ -73,6 +73,10 @@ pair_2 <- test_pairs[,2]
 pair_factor <- choose(m-2,2)/(n_1+1)
 pairs_by_index <- lapply(1:m,function(a) which(pair_1==a | pair_2==a))
 
+pair_index <- matrix(NA_integer_,m,m)
+pair_index[cbind(pair_1,pair_2)] <- seq_along(pair_1)
+pair_index[cbind(pair_2,pair_1)] <- seq_along(pair_1)
+
 ##main simulation
 sim_one <- function(k)
 {
@@ -89,6 +93,16 @@ sim_one <- function(k)
   #Y_test <- sapply(1:m,function(i) rnorm(1,mean=sum(beta_1*X_test[i,]),sd=sd_Y))
   muhat_test <- predict(rf,newdata=X_test)
   #muhat_test <- predict(rlm,newdata=data.frame(X_train=I(X_test)))
+  
+  muhat_rank <- rank(muhat_test)
+  
+  idx_list <- vector("list",n_pairs)
+  for(r in seq_len(n_pairs))
+  {
+    lower <- which(muhat_rank <= min(muhat_rank[pair_1[r]],muhat_rank[pair_2[r]]))
+    upper <- which(muhat_rank >= max(muhat_rank[pair_1[r]],muhat_rank[pair_2[r]]))
+    idx_list[[r]] <- as.vector(pair_index[lower,upper,drop=FALSE])
+  }
   
   cal_diff <- muhat[1:n_1]-muhat[(n_1+1):(2*n_1)]
   cal_abs_diff <- abs(cal_diff)
@@ -158,11 +172,13 @@ sim_one <- function(k)
     e_denom <- rep(1,n_pairs)
     e_denom[finite_T] <- n_cal_null-findInterval(T_rej[finite_T],cal_null_sorted)+1
     e_val <- as.numeric(test_abs_diff>T_rej)*(n_1+1)/e_denom
-    U <- runif(1)
-    e_val_U <- e_val/U
+    e_val_tilde <- sapply(idx_list,function(idx) min(e_val[idx]))
     
-    rej_pairs <- e_val>=eBH(e_val,alpha)
-    rej_pairs_U <- e_val_U>=eBH(e_val_U,alpha)
+    U <- runif(1)
+    e_val_tilde_U <- e_val_tilde/U
+    
+    rej_pairs <- e_val_tilde>=eBH(e_val_tilde,alpha)
+    rej_pairs_U <- e_val_tilde_U>=eBH(e_val_tilde_U,alpha)
     rej_pairs_p <- p_val<=pBH(p_val,alpha)
     
     R <- sum(rej_pairs)
@@ -186,7 +202,7 @@ sim_one <- function(k)
 
 cl <- makeCluster(max(1,detectCores()-1))
 clusterEvalQ(cl,{library(MASS);library(randomForest)})
-clusterExport(cl,c("pBH","eBH","p_X","sd_X","sd_Y","n","m","n_1","mu_X","beta_1","beta_2","alpha_set","n_alpha","n_pairs","pair_1","pair_2","pair_factor","pairs_by_index","rlm","rf"),envir=environment())
+clusterExport(cl,c("pBH","eBH","p_X","sd_X","sd_Y","n","m","n_1","mu_X","beta_1","beta_2","alpha_set","n_alpha","n_pairs","pair_1","pair_2","pair_factor","pairs_by_index","rlm","rf","pair_index"),envir=environment())
 
 res_list <- pblapply(seq_len(tn),sim_one,cl=cl)
 stopCluster(cl)
