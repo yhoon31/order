@@ -37,10 +37,8 @@ y_test_all <- read.table("y_test.txt")$V1
 muhat_cal_all <- read.table("muhat_cal.txt")$V1
 muhat_test_all <- read.table("muhat_test.txt")$V1
 
-
-##FDR control (main paper)
 n <- 200
-m <- 20
+m <- 100
 num_test_set <- 80
 
 set.seed(1234)
@@ -112,6 +110,7 @@ for(k in 1:num_test_set)
     idx_list[[r]] <- as.vector(pair_index[lower,upper,drop=FALSE])
   }
   
+  
   Y_test <- y_test_all[(m*(k-1)+1):(m*k)]
   
   test_diff <- muhat_test[pair_1]-muhat_test[pair_2]
@@ -177,6 +176,7 @@ for(k in 1:num_test_set)
     e_denom <- rep(1,n_pairs)
     e_denom[finite_T] <- n_cal_null-findInterval(T_rej[finite_T],cal_null_sorted)+1
     e_val <- as.numeric(test_abs_diff>T_rej)*(n_1+1)/e_denom
+    
     
     e_val_tilde <- sapply(idx_list,function(idx) min(e_val[idx]))
     
@@ -280,10 +280,9 @@ res <- cbind(fdr,fdr_se,fdr_U,fdr_U_se,fdr_p,fdr_p_se,
              coverage_mean,coverage_se,coverage_U_mean,coverage_U_se,coverage_p_mean,coverage_p_se,
              width_mean,width_se,width_U_mean,width_U_se,width_p_mean,width_p_se)
 
-
 col1 <- "#0072B2"
-col3 <- "#B2182B"
 col2 <- "#56B4E9"
+col3 <- "#B2182B"
 pch_set <- c(16,16,4)
 
 par(mfrow=c(3,2),cex.lab=2,cex.axis=1.7,mar=c(5,6,2,0),xpd=NA,oma=c(0,0,0,4),mgp=c(3,1,0))
@@ -325,69 +324,221 @@ arrows(alpha_set,res[,35]-res[,36],alpha_set,res[,35]+res[,36],length=0,angle=90
 
 
 
-##FWER control (Appendix)
-y_cal <- read.table("y_cal.txt")$V1
+
+##FWER_Bonferroni
+y_cal_all <- read.table("y_cal.txt")$V1
 y_test_all <- read.table("y_test.txt")$V1
-muhat <- read.table("muhat_cal.txt")$V1
+muhat_all <- read.table("muhat_cal.txt")$V1
 muhat_test_all <- read.table("muhat_test.txt")$V1
 
 set.seed(1)
-perm <- sample(1:length(y_test_all)) #shuffle test set
+perm <- sample(1:length(y_test_all))
 y_test_all <- y_test_all[perm]
 muhat_test_all <- muhat_test_all[perm]
 
-n <- 10000
+n <- 1000
 m <- 5
-num_test_set <- 500
+num_test_set <- 200
+alpha_set <- seq(0.05, 0.2, 0.025)
 
-alpha_set <- seq(0.05,0.2,0.025)
-fd <- matrix(0,nrow=num_test_set,ncol=length(alpha_set))
-tp <- matrix(0,nrow=num_test_set,ncol=length(alpha_set))
+fd <- matrix(0, nrow=num_test_set, ncol=length(alpha_set))
+tp <- matrix(0, nrow=num_test_set, ncol=length(alpha_set))
+coverage <- matrix(0, nrow=num_test_set, ncol=length(alpha_set))
+width <- matrix(0, nrow=num_test_set, ncol=length(alpha_set))
 
-
-n_1 <- floor(n/2)
-cal_abs_diff <- abs(muhat[1:n_1]-muhat[(n_1+1):(2*n_1)])
-cal_Y_null <- ( (muhat[1:n_1]-muhat[(n_1+1):(2*n_1)])*(y_cal[1:n_1]-y_cal[(n_1+1):(2*n_1)]) <= 0 )
-test_pairs <- t(combn(m,2))
-
-
-pb <- txtProgressBar(min = 0, max = num_test_set, style = 3)
+test_pairs <- t(combn(m, 2))
+pb <- txtProgressBar(min=0, max=num_test_set, style=3)
 
 for(t in 1:num_test_set)
 {
+  ind_cal <- sample(1:length(y_cal_all), n, replace=FALSE)
+  y_cal <- y_cal_all[ind_cal]
+  muhat <- muhat_all[ind_cal]
+  n_1 <- floor(n/2)
+  
+  cal_abs_diff <- abs(muhat[1:n_1] - muhat[(n_1+1):(2*n_1)])
+  cal_Y_null <- ((muhat[1:n_1] - muhat[(n_1+1):(2*n_1)]) * (y_cal[1:n_1] - y_cal[(n_1+1):(2*n_1)]) <= 0)
+  
   muhat_test <- abs(muhat_test_all[(m*(t-1)+1):(m*t)])
   Y_test <- y_test_all[(m*(t-1)+1):(m*t)]
-  test_abs_diff <- apply(test_pairs,1, function(a) abs(muhat_test[a[1]] - muhat_test[a[2]]))
   
-  test_null <- apply(test_pairs,1, function(a) (muhat_test[a[1]] - muhat_test[a[2]])*(Y_test[a[1]]-Y_test[a[2]]) <= 0)
-  test_non_null <- 1-test_null
+  test_abs_diff <- apply(test_pairs, 1, function(a) abs(muhat_test[a[1]] - muhat_test[a[2]]))
+  test_null <- apply(test_pairs, 1, function(a) (muhat_test[a[1]] - muhat_test[a[2]]) * (Y_test[a[1]] - Y_test[a[2]]) <= 0)
+  test_non_null <- 1 - test_null
+  p_val <- sapply(test_abs_diff, function(v) (sum((v < cal_abs_diff) * cal_Y_null) + 1) / (n_1 + 1))
   
-  
-  p_val <- sapply(test_abs_diff, function(v) (sum((v < cal_abs_diff)*cal_Y_null)+1)/(n_1+1))
+  true_rank <- rank(Y_test, ties.method="random")
+  I_hat <- rank(muhat_test, ties.method="random")
   
   for(j in 1:length(alpha_set))
   {
     alpha <- alpha_set[j]
     rej_pairs <- (p_val <= (2*alpha/(m*(m-1))))
-    fd[t,j] <- (sum(rej_pairs*test_null) > 0)
-    tp[t,j] <- sum(rej_pairs*test_non_null)/max(sum(test_non_null),1)
     
+    fd[t,j] <- (sum(rej_pairs * test_null) > 0)
+    tp[t,j] <- sum(rej_pairs * test_non_null) / max(sum(test_non_null), 1)
+    
+    rej_pairs_ind <- test_pairs[rej_pairs, , drop=FALSE]
+    rank_interval <- cbind(rep(1, m), rep(m, m))
+    
+    if(nrow(rej_pairs_ind) > 0)
+    {
+      swap <- I_hat[rej_pairs_ind[,1]] > I_hat[rej_pairs_ind[,2]]
+      rej_pairs_ind[swap, ] <- rej_pairs_ind[swap, 2:1]
+      
+      for(i in 1:m)
+      {
+        rank_interval[i,1] <- sum(I_hat[rej_pairs_ind[,2]] == I_hat[i]) + 1
+        rank_interval[i,2] <- m - sum(I_hat[rej_pairs_ind[,1]] == I_hat[i])
+      }
+    }
+    
+    coverage[t,j] <- mean(rank_interval[,1] <= true_rank & true_rank <= rank_interval[,2])
+    width[t,j] <- mean(rank_interval[,2] - rank_interval[,1] + 1)
   }
   
   setTxtProgressBar(pb, t)
 }
-
+close(pb)
 
 fwer <- colMeans(fd)
-fwer_se <- apply(fd,2,sd)/sqrt(num_test_set)
+fwer_se <- apply(fd, 2, sd) / sqrt(num_test_set)
 power <- colMeans(tp)
-power_se <- apply(tp,2,sd)/sqrt(num_test_set)
+power_se <- apply(tp, 2, sd) / sqrt(num_test_set)
+coverage_mean <- colMeans(coverage)
+coverage_se <- apply(coverage, 2, sd) / sqrt(num_test_set)
+width_mean <- colMeans(width)
+width_se <- apply(width, 2, sd) / sqrt(num_test_set)
 
 
-#plot
-par(mfrow=c(1,2), cex.lab = 2, cex.axis=1.7,mar=c(5,6,2,0), xpd=NA, oma = c(0, 0, 0, 4), mgp = c(3, 1, 0))
-plot(alpha_set,fwer,pch=16,ylim=c(0,0.22),xlab=expression(alpha),ylab="FWER")
-arrows(alpha_set, fwer-fwer_se, alpha_set, fwer+fwer_se, length=0, angle=90, code=3,lwd=2)
-segments(0.05,0.05,0.2,0.2,lty=2,lwd=2)
-plot(alpha_set,power,pch=16,ylim=c(0,0.4),xlab=expression(alpha),ylab="Power")
-arrows(alpha_set, power-power_se, alpha_set, power+power_se, length=0, angle=90, code=3,lwd=2)
+# Plot
+par(mfrow=c(2,2), cex.lab=1.6, cex.axis=1.3, mar=c(4.5,5,2,1), mgp=c(2.8,0.8,0))
+
+plot(alpha_set, fwer, pch=16, ylim=c(0,0.22), xlab=expression(alpha), ylab="FWER")
+arrows(alpha_set, fwer-fwer_se, alpha_set, fwer+fwer_se, length=0, angle=90, code=3, lwd=1.5)
+segments(0.05, 0.05, 0.2, 0.2, lty=2, lwd=2)
+
+plot(alpha_set, power, pch=16, ylim=c(0,0.4), xlab=expression(alpha), ylab="Power")
+arrows(alpha_set, power-power_se, alpha_set, power+power_se, length=0, angle=90, code=3, lwd=1.5)
+
+plot(1-alpha_set, coverage_mean, pch=16, ylim=c(0.8,1), xlab=expression(alpha), ylab="Coverage rate")
+arrows(1-alpha_set, coverage_mean-coverage_se, 1-alpha_set, coverage_mean+coverage_se, length=0, angle=90, code=3, lwd=1.5)
+segments(0.8,0.8,0.95,0.95,lty=2,lwd=2)
+
+plot(1-alpha_set, width_mean, pch=16, ylim=c(0,m), xlab=expression(alpha), ylab="Mean width")
+arrows(1-alpha_set, width_mean-width_se, 1-alpha_set, width_mean+width_se, length=0, angle=90, code=3, lwd=1.5)
+
+
+
+
+
+
+
+
+## FWER_partitioning
+y_cal_all <- read.table("y_cal.txt")$V1
+y_test_all <- read.table("y_test.txt")$V1
+muhat_all <- read.table("muhat_cal.txt")$V1
+muhat_test_all <- read.table("muhat_test.txt")$V1
+
+set.seed(1)
+perm <- sample(1:length(y_test_all))
+y_test_all <- y_test_all[perm]
+muhat_test_all <- muhat_test_all[perm]
+
+n <- 1000
+m <- 5
+num_test_set <- 200
+alpha_set <- seq(0.05, 0.2, 0.025)
+
+fd <- matrix(0, nrow=num_test_set, ncol=length(alpha_set))
+tp <- matrix(0, nrow=num_test_set, ncol=length(alpha_set))
+coverage <- matrix(0, nrow=num_test_set, ncol=length(alpha_set))
+width <- matrix(0, nrow=num_test_set, ncol=length(alpha_set))
+
+test_pairs <- t(combn(m, 2))
+num_par <- floor(n/m)
+pb <- txtProgressBar(min=0, max=num_test_set, style=3)
+
+for(t in 1:num_test_set)
+{
+  ind_cal <- sample(1:length(y_cal_all), n, replace=FALSE)
+  y_cal <- y_cal_all[ind_cal]
+  muhat <- muhat_all[ind_cal]
+  
+  muhat_test <- abs(muhat_test_all[(m*(t-1)+1):(m*t)])
+  Y_test <- y_test_all[(m*(t-1)+1):(m*t)]
+  test_abs_diff <- apply(test_pairs, 1, function(a) abs(muhat_test[a[1]] - muhat_test[a[2]]))
+  test_null <- apply(test_pairs, 1, function(a) (muhat_test[a[1]] - muhat_test[a[2]]) * (Y_test[a[1]] - Y_test[a[2]]) <= 0)
+  test_non_null <- 1 - test_null
+  
+  score <- rep(0, num_par)
+  for(l in 1:num_par)
+  {
+    ind_l <- ((l-1)*m+1):(l*m)
+    Y_l <- y_cal[ind_l]
+    muhat_l <- muhat[ind_l]
+    score[l] <- max(apply(test_pairs, 1, function(a) abs(muhat_l[a[1]] - muhat_l[a[2]]) * ((muhat_l[a[1]] - muhat_l[a[2]]) * (Y_l[a[1]] - Y_l[a[2]]) <= 0)))
+  }
+  
+  bound <- c(sort(score), Inf)[ceiling((1-alpha_set)*(num_par+1))]
+  rej_pairs <- sapply(bound, function(v) test_abs_diff > v)
+  fd[t,] <- apply(rej_pairs, 2, function(v) sum(v * test_null) > 0)
+  tp[t,] <- apply(rej_pairs, 2, function(v) sum(v * test_non_null) / max(sum(test_non_null), 1))
+  
+  true_rank <- rank(Y_test, ties.method="random")
+  I_hat <- rank(muhat_test, ties.method="random")
+  
+  for(j in 1:length(alpha_set))
+  {
+    rej_pairs_ind <- test_pairs[rej_pairs[,j], , drop=FALSE]
+    rank_interval <- cbind(rep(1, m), rep(m, m))
+    
+    if(nrow(rej_pairs_ind) > 0)
+    {
+      swap <- I_hat[rej_pairs_ind[,1]] > I_hat[rej_pairs_ind[,2]]
+      rej_pairs_ind[swap, ] <- rej_pairs_ind[swap, 2:1]
+      
+      for(i in 1:m)
+      {
+        rank_interval[i,1] <- sum(I_hat[rej_pairs_ind[,2]] == I_hat[i]) + 1
+        rank_interval[i,2] <- m - sum(I_hat[rej_pairs_ind[,1]] == I_hat[i])
+      }
+    }
+    
+    coverage[t,j] <- mean(rank_interval[,1] <= true_rank & true_rank <= rank_interval[,2])
+    width[t,j] <- mean(rank_interval[,2] - rank_interval[,1] + 1)
+  }
+  
+  setTxtProgressBar(pb, t)
+}
+close(pb)
+
+fwer <- colMeans(fd)
+fwer_se <- apply(fd, 2, sd) / sqrt(num_test_set)
+power <- colMeans(tp)
+power_se <- apply(tp, 2, sd) / sqrt(num_test_set)
+coverage_mean <- colMeans(coverage)
+coverage_se <- apply(coverage, 2, sd) / sqrt(num_test_set)
+width_mean <- colMeans(width)
+width_se <- apply(width, 2, sd) / sqrt(num_test_set)
+
+
+# Plot
+par(mfrow=c(2,2), cex.lab=1.6, cex.axis=1.3, mar=c(4.5,5,2,1), mgp=c(2.8,0.8,0))
+
+plot(alpha_set, fwer, pch=16, ylim=c(0,0.22), xlab=expression(alpha), ylab="FWER")
+arrows(alpha_set, fwer-fwer_se, alpha_set, fwer+fwer_se, length=0, angle=90, code=3, lwd=1.5)
+segments(0.05, 0.05, 0.2, 0.2, lty=2, lwd=2)
+
+plot(alpha_set, power, pch=16, ylim=c(0,0.4), xlab=expression(alpha), ylab="Power")
+arrows(alpha_set, power-power_se, alpha_set, power+power_se, length=0, angle=90, code=3, lwd=1.5)
+
+plot(1-alpha_set, coverage_mean, pch=16, ylim=c(0.8,1), xlab=expression(alpha), ylab="Coverage rate")
+arrows(1-alpha_set, coverage_mean-coverage_se, 1-alpha_set, coverage_mean+coverage_se, length=0, angle=90, code=3, lwd=1.5)
+segments(0.8,0.8,0.95,0.95,lty=2,lwd=2)
+
+plot(1-alpha_set, width_mean, pch=16, ylim=c(0,m), xlab=expression(alpha), ylab="Mean width")
+arrows(1-alpha_set, width_mean-width_se, 1-alpha_set, width_mean+width_se, length=0, angle=90, code=3, lwd=1.5)
+
+
